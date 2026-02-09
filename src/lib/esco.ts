@@ -1,17 +1,55 @@
-const ESCO_API = process.env.ESCO_API_URL || "https://ec.europa.eu/esco/api";
+import mongoose from "mongoose";
 
-async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
-  for (let i = 0; i < retries; i++) {
-    const res = await fetch(url);
-    if (res.ok) return res;
-    if (res.status >= 500 && i < retries - 1) {
-      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
-      continue;
-    }
-    throw new Error(`ESCO API error: ${res.status} ${res.statusText}`);
+// ---------- MongoDB connection (Nine Gates jobSkillsDB) ----------
+
+const MONGODB_URI =
+  process.env.MONGODB_URI ||
+  "mongodb://root:root@localhost:27017/jobSkillsDB?authSource=admin";
+
+let connected = false;
+
+async function connectMongo() {
+  if (connected) return;
+  if (mongoose.connection.readyState >= 1) {
+    connected = true;
+    return;
   }
-  throw new Error("ESCO API: max retries reached");
+  await mongoose.connect(MONGODB_URI);
+  connected = true;
 }
+
+// ---------- Mongoose models (read-only, matches Nine Gates schema) ----------
+
+const skillSchema = new mongoose.Schema(
+  {
+    title: String,
+    uri: String,
+    skillType: String,
+    description: String,
+  },
+  { collection: "skills" }
+);
+
+const occupationSchema = new mongoose.Schema(
+  {
+    title: String,
+    uri: String,
+    description: String,
+    preferredLabel: String,
+    alternativeLabel: [String],
+    code: String,
+    essentialSkills: [{ type: mongoose.Schema.Types.ObjectId, ref: "Skill" }],
+    optionalSkills: [{ type: mongoose.Schema.Types.ObjectId, ref: "Skill" }],
+  },
+  { collection: "occupations" }
+);
+
+const Skill =
+  mongoose.models.Skill || mongoose.model("Skill", skillSchema);
+const Occupation =
+  mongoose.models.Occupation || mongoose.model("Occupation", occupationSchema);
+
+// ---------- Exported interfaces (unchanged) ----------
 
 export interface EscoSkill {
   uri: string;
@@ -31,59 +69,54 @@ export interface EscoOccupation {
   optionalSkills: EscoSkill[];
 }
 
-export async function searchOccupations(query: string): Promise<{ uri: string; title: string }[]> {
-  const url = `${ESCO_API}/search?text=${encodeURIComponent(query)}&language=en&type=occupation&limit=10`;
-  const res = await fetchWithRetry(url);
-  const data = await res.json();
+// ---------- Exported functions (same signatures, now query MongoDB) ----------
 
-  const results = data._embedded?.results ?? [];
-  return results.map((r: { uri: string; title: string }) => ({
-    uri: r.uri,
-    title: r.title,
-  }));
+export async function searchOccupations(
+  query: string
+): Promise<{ uri: string; title: string }[]> {
+  await connectMongo();
+  const results = await Occupation.find(
+    { title: { $regex: query, $options: "i" } },
+    { uri: 1, title: 1, _id: 0 }
+  ).limit(10);
+  return results.map((r) => ({ uri: r.uri, title: r.title }));
 }
 
-export async function getOccupationDetails(occupationUri: string): Promise<EscoOccupation> {
-  const url = `${ESCO_API}/resource/occupation?uri=${encodeURIComponent(occupationUri)}&language=en`;
-  const res = await fetchWithRetry(url);
-  const data = await res.json();
+export async function getOccupationDetails(
+  occupationUri: string
+): Promise<EscoOccupation> {
+  await connectMongo();
+  const occ = await Occupation.findOne({ uri: occupationUri })
+    .populate("essentialSkills")
+    .populate("optionalSkills");
 
-  const essentialSkills: EscoSkill[] = (data._links?.hasEssentialSkill ?? []).map(
-    (s: { uri: string; title: string; skillType?: string }) => ({
-      uri: s.uri,
-      title: s.title,
-      skillType: s.skillType?.split("/").pop(),
-    })
-  );
+  if (!occ) throw new Error(`Occupation not found: ${occupationUri}`);
 
-  const optionalSkills: EscoSkill[] = (data._links?.hasOptionalSkill ?? []).map(
-    (s: { uri: string; title: string; skillType?: string }) => ({
-      uri: s.uri,
-      title: s.title,
-      skillType: s.skillType?.split("/").pop(),
-    })
-  );
+  const mapSkill = (s: { uri: string; title: string; skillType?: string }): EscoSkill => ({
+    uri: s.uri,
+    title: s.title,
+    skillType: s.skillType,
+  });
 
   return {
-    uri: data.uri,
-    title: data.title,
-    description: data.description?.en?.literal,
-    preferredLabel: data.preferredLabel?.en,
-    alternativeLabels: data.alternativeLabel?.en ?? [],
-    code: data.code,
-    essentialSkills,
-    optionalSkills,
+    uri: occ.uri,
+    title: occ.title,
+    description: occ.description,
+    preferredLabel: occ.preferredLabel,
+    alternativeLabels: occ.alternativeLabel ?? [],
+    code: occ.code,
+    essentialSkills: (occ.essentialSkills || []).map(mapSkill),
+    optionalSkills: (occ.optionalSkills || []).map(mapSkill),
   };
 }
 
-export async function searchSkills(query: string): Promise<{ uri: string; title: string }[]> {
-  const url = `${ESCO_API}/search?text=${encodeURIComponent(query)}&language=en&type=skill&limit=10`;
-  const res = await fetchWithRetry(url);
-  const data = await res.json();
-
-  const results = data._embedded?.results ?? [];
-  return results.map((r: { uri: string; title: string }) => ({
-    uri: r.uri,
-    title: r.title,
-  }));
+export async function searchSkills(
+  query: string
+): Promise<{ uri: string; title: string }[]> {
+  await connectMongo();
+  const results = await Skill.find(
+    { title: { $regex: query, $options: "i" } },
+    { uri: 1, title: 1, _id: 0 }
+  ).limit(10);
+  return results.map((r) => ({ uri: r.uri, title: r.title }));
 }

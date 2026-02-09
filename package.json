@@ -16,6 +16,7 @@
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "express": "^5.2.1",
+    "mongoose": "^9.1.6",
     "next": "16.1.6",
     "pg": "^8.18.0",
     "prisma": "^7.3.0",
