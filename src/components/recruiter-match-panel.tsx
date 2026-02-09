@@ -9,10 +9,30 @@ interface SeekerOption {
   skillCount: number;
 }
 
+interface FuzzyTitle {
+  seekerTitle: string;
+  jobTitle: string;
+  similarity: number;
+}
+
+interface ScoreBreakdown {
+  essentialExact: number;
+  essentialFuzzy: number;
+  optionalExact: number;
+  optionalFuzzy: number;
+  proficiencyBonus: number;
+  maxPossible: number;
+}
+
 interface MatchData {
   matchScore: number;
+  seekerRelevance?: number;
   matchedTitles: string[];
   missingTitles: string[];
+  fuzzyTitles?: FuzzyTitle[];
+  optionalMatchedTitles?: string[];
+  optionalMissingTitles?: string[];
+  scoreBreakdown?: ScoreBreakdown;
   summary: string;
   seekerName: string;
   jobTitle: string;
@@ -116,8 +136,13 @@ export function RecruiterMatchPanel({
       {matchData && (
         <MatchResults
           matchScore={matchData.matchScore}
+          seekerRelevance={matchData.seekerRelevance}
           matchedTitles={matchData.matchedTitles}
           missingTitles={matchData.missingTitles}
+          fuzzyTitles={matchData.fuzzyTitles}
+          optionalMatchedTitles={matchData.optionalMatchedTitles}
+          optionalMissingTitles={matchData.optionalMissingTitles}
+          scoreBreakdown={matchData.scoreBreakdown}
           summary={matchData.summary}
           seekerName={matchData.seekerName}
           jobTitle={matchData.jobTitle}

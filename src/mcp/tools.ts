@@ -3,9 +3,9 @@ import { z } from "zod";
 import { PrismaClient } from "../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
-import { searchOccupations, getOccupationDetails, searchSkills } from "../lib/esco";
-import { parseCv, explainGaps, summarizeCandidate } from "../lib/claude";
-import { matchSkills } from "../lib/matching";
+import { searchOccupations, getOccupationDetails, searchSkills, batchCoOccurrence } from "../lib/esco";
+import { parseCv, explainGaps, summarizeCandidate, EnhancedGapContext } from "../lib/claude";
+import { matchSkillsEnhanced, SeekerSkillInput, JobSkillInput } from "../lib/matching";
 
 function createPrisma() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -23,7 +23,7 @@ export function registerTools(server: McpServer) {
   // 1. parse_cv
   server.tool(
     "parse_cv",
-    "Upload CV text, parse it with Claude AI, map skills to ESCO taxonomy, and create a seeker profile. Returns the new seeker profile with all mapped ESCO skills.",
+    "Upload CV text, parse it with Claude AI, map skills to ESCO taxonomy, and create a seeker profile. Returns the new seeker profile with all mapped ESCO skills including proficiency levels.",
     {
       name: z.string().describe("Name of the job seeker"),
       email: z.string().optional().describe("Email address (optional)"),
@@ -32,12 +32,24 @@ export function registerTools(server: McpServer) {
     async ({ name, email, cvText }) => {
       const parsed = await parseCv(cvText);
 
-      const escoSkills: { uri: string; title: string; skillType?: string }[] = [];
+      // Build proficiency lookup
+      const proficiencyMap = new Map<string, number>();
+      for (const sp of parsed.skillsWithProficiency) {
+        proficiencyMap.set(sp.name.toLowerCase(), sp.proficiency);
+      }
+
+      const escoSkills: { uri: string; title: string; skillType?: string; proficiency: number; source: string }[] = [];
 
       for (const rawSkill of parsed.rawSkills) {
         const results = await searchSkills(rawSkill);
         if (results.length > 0) {
-          escoSkills.push({ uri: results[0].uri, title: results[0].title });
+          const prof = proficiencyMap.get(rawSkill.toLowerCase()) ?? 3;
+          escoSkills.push({
+            uri: results[0].uri,
+            title: results[0].title,
+            proficiency: prof,
+            source: "explicit",
+          });
         }
       }
 
@@ -46,14 +58,26 @@ export function registerTools(server: McpServer) {
         if (occupations.length > 0) {
           const occupation = await getOccupationDetails(occupations[0].uri);
           for (const s of occupation.essentialSkills) {
-            escoSkills.push({ uri: s.uri, title: s.title, skillType: s.skillType });
+            escoSkills.push({
+              uri: s.uri,
+              title: s.title,
+              skillType: s.skillType,
+              proficiency: 3,
+              source: "inferred",
+            });
           }
         }
       }
 
-      const uniqueSkills = Array.from(
-        new Map(escoSkills.map((s) => [s.uri, s])).values()
-      );
+      // Deduplicate (prefer explicit over inferred)
+      const skillMap = new Map<string, typeof escoSkills[number]>();
+      for (const s of escoSkills) {
+        const existing = skillMap.get(s.uri);
+        if (!existing || (s.source === "explicit" && existing.source === "inferred")) {
+          skillMap.set(s.uri, s);
+        }
+      }
+      const uniqueSkills = Array.from(skillMap.values());
 
       const user = await prisma.user.create({
         data: {
@@ -70,6 +94,8 @@ export function registerTools(server: McpServer) {
                   escoUri: s.uri,
                   title: s.title,
                   skillType: s.skillType,
+                  proficiency: s.proficiency,
+                  source: s.source,
                 })),
               },
             },
@@ -84,6 +110,8 @@ export function registerTools(server: McpServer) {
         jobTitles: parsed.jobTitles,
         education: parsed.education,
         totalSkills: uniqueSkills.length,
+        explicitSkills: uniqueSkills.filter((s) => s.source === "explicit").length,
+        inferredSkills: uniqueSkills.filter((s) => s.source === "inferred").length,
       }, null, 2));
     }
   );
@@ -178,7 +206,7 @@ export function registerTools(server: McpServer) {
   // 4. match_seeker_to_job
   server.tool(
     "match_seeker_to_job",
-    "Match a seeker profile against a job posting. Compares ESCO skill URIs, calculates match score, and generates AI career coaching (for seeker) and candidate summary (for recruiter).",
+    "Match a seeker profile against a job posting. Uses enhanced matching with fuzzy skill comparison, optional skills, proficiency weighting, and bidirectional scoring. Generates AI career coaching and candidate summary.",
     {
       seekerProfileId: z.string().describe("Seeker profile ID"),
       jobPostingId: z.string().describe("Job posting ID"),
@@ -198,49 +226,99 @@ export function registerTools(server: McpServer) {
       if (!seeker) return text(JSON.stringify({ error: "Seeker not found" }));
       if (!jobPosting) return text(JSON.stringify({ error: "Job posting not found" }));
 
-      const seekerTitleMap: Record<string, string> = {};
-      for (const s of seeker.skills) seekerTitleMap[s.escoUri] = s.title;
-      const jobTitleMap: Record<string, string> = {};
-      for (const s of jobPosting.skills) jobTitleMap[s.escoUri] = s.title;
+      const titleMap: Record<string, string> = {};
+      for (const s of seeker.skills) titleMap[s.escoUri] = s.title;
+      for (const s of jobPosting.skills) titleMap[s.escoUri] = s.title;
 
       // Check for existing match
       const existing = await prisma.match.findUnique({
         where: { seekerProfileId_jobPostingId: { seekerProfileId, jobPostingId } },
       });
 
+      let matchResult;
       let matchRecord;
-      let result;
 
       if (existing) {
         matchRecord = existing;
-        const matchedTitles = existing.matchedSkills.map((uri) => jobTitleMap[uri] || seekerTitleMap[uri] || uri);
-        const missingTitles = existing.missingSkills.map((uri) => jobTitleMap[uri] || uri);
-        result = { matchScore: existing.matchScore, matchedTitles, missingTitles };
+        const fuzzyMatches = (existing.fuzzyMatches as Array<{ seekerTitle: string; jobTitle: string; similarity: number }>) || [];
+        matchResult = {
+          matchScore: existing.matchScore,
+          seekerRelevance: existing.seekerRelevance,
+          matchedTitles: existing.matchedSkills.map((uri) => titleMap[uri] || uri),
+          missingTitles: existing.missingSkills.map((uri) => titleMap[uri] || uri),
+          fuzzyTitles: fuzzyMatches.map((f) => ({
+            seekerTitle: f.seekerTitle,
+            jobTitle: f.jobTitle,
+            similarity: f.similarity,
+          })),
+          optionalMatchedTitles: (existing.optionalMatched || []).map((uri) => titleMap[uri] || uri),
+          optionalMissingTitles: (existing.optionalMissing || []).map((uri) => titleMap[uri] || uri),
+          scoreBreakdown: existing.scoreBreakdown,
+        };
       } else {
-        const essentialUris = jobPosting.skills.filter((s) => s.isEssential).map((s) => s.escoUri);
-        const seekerUris = seeker.skills.map((s) => s.escoUri);
-        result = matchSkills(seekerUris, essentialUris, seekerTitleMap, jobTitleMap);
+        // Build enhanced inputs
+        const seekerSkillInputs: SeekerSkillInput[] = seeker.skills.map((s) => ({
+          uri: s.escoUri,
+          title: s.title,
+          proficiency: s.proficiency,
+          source: s.source,
+        }));
+
+        const jobSkillInputs: JobSkillInput[] = jobPosting.skills.map((s) => ({
+          uri: s.escoUri,
+          title: s.title,
+          isEssential: s.isEssential,
+        }));
+
+        const seekerUris = seekerSkillInputs.map((s) => s.uri);
+        const jobUris = jobSkillInputs.map((s) => s.uri);
+        const coOccurrenceMap = await batchCoOccurrence(seekerUris, jobUris);
+
+        const result = matchSkillsEnhanced(seekerSkillInputs, jobSkillInputs, coOccurrenceMap, titleMap);
 
         matchRecord = await prisma.match.create({
           data: {
             seekerProfileId,
             jobPostingId,
             matchScore: result.matchScore,
-            matchedSkills: result.matchedSkills,
-            missingSkills: result.missingSkills,
+            matchedSkills: result.matchedEssential,
+            missingSkills: result.missingEssential,
+            seekerRelevance: result.seekerRelevance,
+            fuzzyMatches: JSON.parse(JSON.stringify(result.fuzzyMatches)),
+            optionalMatched: result.matchedOptional,
+            optionalMissing: result.missingOptional,
+            scoreBreakdown: JSON.parse(JSON.stringify(result.scoreBreakdown)),
           },
         });
+
+        matchResult = {
+          matchScore: result.matchScore,
+          seekerRelevance: result.seekerRelevance,
+          matchedTitles: result.matchedTitles,
+          missingTitles: result.missingTitles,
+          fuzzyTitles: result.fuzzyTitles,
+          optionalMatchedTitles: result.optionalMatchedTitles,
+          optionalMissingTitles: result.optionalMissingTitles,
+          scoreBreakdown: result.scoreBreakdown,
+        };
       }
 
+      const enhancedContext: EnhancedGapContext = {
+        fuzzyMatches: matchResult.fuzzyTitles,
+        optionalMatchedTitles: matchResult.optionalMatchedTitles,
+        seekerRelevance: matchResult.seekerRelevance,
+      };
+
       const [coaching, summary] = await Promise.all([
-        explainGaps(result.matchedTitles, result.missingTitles, jobPosting.title),
+        explainGaps(matchResult.matchedTitles, matchResult.missingTitles, jobPosting.title, enhancedContext),
         summarizeCandidate(
           seeker.user.name || "Anonymous Seeker",
           seeker.jobTitles,
-          result.matchScore,
-          result.matchedTitles,
-          result.missingTitles,
-          jobPosting.title
+          matchResult.matchScore,
+          matchResult.matchedTitles,
+          matchResult.missingTitles,
+          jobPosting.title,
+          enhancedContext
         ),
       ]);
 
@@ -248,9 +326,14 @@ export function registerTools(server: McpServer) {
         matchId: matchRecord.id,
         seekerName: seeker.user.name,
         jobTitle: jobPosting.title,
-        matchScore: result.matchScore,
-        matchedSkills: result.matchedTitles,
-        missingSkills: result.missingTitles,
+        matchScore: matchResult.matchScore,
+        seekerRelevance: matchResult.seekerRelevance,
+        matchedSkills: matchResult.matchedTitles,
+        missingSkills: matchResult.missingTitles,
+        fuzzyMatches: matchResult.fuzzyTitles,
+        optionalMatched: matchResult.optionalMatchedTitles,
+        optionalMissing: matchResult.optionalMissingTitles,
+        scoreBreakdown: matchResult.scoreBreakdown,
         coaching,
         recruiterSummary: summary,
       }, null, 2));

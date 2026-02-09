@@ -38,19 +38,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "CV text is required" }, { status: 400 });
     }
 
-    // 1. Parse CV with Claude
+    // 1. Parse CV with Claude (now includes proficiency)
     const parsed = await parseCv(cvText);
 
-    // 2. Map raw skills to ESCO skills
-    const escoSkills: { uri: string; title: string; skillType?: string }[] = [];
+    // Build proficiency lookup from Claude's analysis
+    const proficiencyMap = new Map<string, number>();
+    for (const sp of parsed.skillsWithProficiency) {
+      const prof = Math.max(1, Math.min(5, Math.round(sp.proficiency || 3)));
+      proficiencyMap.set(sp.name.toLowerCase(), prof);
+    }
+
+    // 2. Map raw skills to ESCO skills (source: "explicit")
+    const escoSkills: { uri: string; title: string; skillType?: string; proficiency: number; source: string }[] = [];
 
     for (const rawSkill of parsed.rawSkills) {
       try {
         const results = await searchSkills(rawSkill);
         if (results.length > 0) {
+          const prof = proficiencyMap.get(rawSkill.toLowerCase()) ?? 3;
           escoSkills.push({
             uri: results[0].uri,
             title: results[0].title,
+            proficiency: prof,
+            source: "explicit",
           });
         }
       } catch {
@@ -58,7 +68,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Also map job titles to occupations and expand their essential skills only
+    // 3. Also map job titles to occupations and expand their essential skills (source: "inferred")
     for (const jobTitle of parsed.jobTitles) {
       try {
         const occupations = await searchOccupations(jobTitle);
@@ -69,6 +79,8 @@ export async function POST(req: NextRequest) {
               uri: s.uri,
               title: s.title,
               skillType: s.skillType,
+              proficiency: 3,
+              source: "inferred",
             });
           }
         }
@@ -77,12 +89,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Deduplicate skills by URI
-    const uniqueSkills = Array.from(
-      new Map(escoSkills.map((s) => [s.uri, s])).values()
-    );
+    // 4. Deduplicate skills by URI (prefer explicit over inferred)
+    const skillMap = new Map<string, typeof escoSkills[number]>();
+    for (const s of escoSkills) {
+      const existing = skillMap.get(s.uri);
+      if (!existing || (s.source === "explicit" && existing.source === "inferred")) {
+        skillMap.set(s.uri, s);
+      }
+    }
+    const uniqueSkills = Array.from(skillMap.values());
 
-    // 4. Create user + seeker profile + skills in one transaction
+    // 5. Create user + seeker profile + skills in one transaction
     const user = await prisma.user.create({
       data: {
         name: name || "Anonymous Seeker",
@@ -99,6 +116,8 @@ export async function POST(req: NextRequest) {
                 escoUri: s.uri,
                 title: s.title,
                 skillType: s.skillType,
+                proficiency: s.proficiency,
+                source: s.source,
               })),
             },
           },
@@ -114,8 +133,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(user, { status: 201 });
   } catch (error) {
     console.error("Seeker creation error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack?.split("\n").slice(0, 5).join("\n") : "";
     return NextResponse.json(
-      { error: "Failed to create seeker profile" },
+      { error: "Failed to create seeker profile", detail: message, stack },
       { status: 500 }
     );
   }
