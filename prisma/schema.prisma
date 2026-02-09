@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String            @id @default(cuid())
+  email     String            @unique
+  name      String?
+  role      Role              @default(SEEKER)
+  seeker    SeekerProfile?
+  recruiter RecruiterProfile?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+enum Role {
+  SEEKER
+  RECRUITER
+}
+
+model SeekerProfile {
+  id         String        @id @default(cuid())
+  userId     String        @unique
+  user       User          @relation(fields: [userId], references: [id])
+  cvText     String?
+  cvFileName String?
+  jobTitles  String[]
+  education  String[]
+  skills     SeekerSkill[]
+  matches    Match[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+}
+
+model SeekerSkill {
+  id              String        @id @default(cuid())
+  seekerProfileId String
+  seekerProfile   SeekerProfile @relation(fields: [seekerProfileId], references: [id], onDelete: Cascade)
+  escoUri         String
+  title           String
+  skillType       String?
+}
+
+model RecruiterProfile {
+  id          String       @id @default(cuid())
+  userId      String       @unique
+  user        User         @relation(fields: [userId], references: [id])
+  company     String?
+  jobPostings JobPosting[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model JobPosting {
+  id                 String           @id @default(cuid())
+  recruiterProfileId String
+  recruiterProfile   RecruiterProfile @relation(fields: [recruiterProfileId], references: [id])
+  title              String
+  escoOccupationUri  String?
+  skills             JobSkill[]
+  matches            Match[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model JobSkill {
+  id           String     @id @default(cuid())
+  jobPostingId String
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  escoUri      String
+  title        String
+  skillType    String?
+  isEssential  Boolean    @default(true)
+}
+
+model Match {
+  id              String        @id @default(cuid())
+  seekerProfileId String
+  seekerProfile   SeekerProfile @relation(fields: [seekerProfileId], references: [id])
+  jobPostingId    String
+  jobPosting      JobPosting    @relation(fields: [jobPostingId], references: [id])
+  matchScore      Float
+  matchedSkills   String[]
+  missingSkills   String[]
+  createdAt       DateTime      @default(now())
+
+  @@unique([seekerProfileId, jobPostingId])
+}
