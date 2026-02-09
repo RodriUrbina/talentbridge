@@ -21,6 +21,7 @@
     "prisma": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "unpdf": "^1.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

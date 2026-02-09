@@ -2,14 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseCv } from "@/lib/claude";
 import { searchSkills, searchOccupations, getOccupationDetails } from "@/lib/esco";
+import { extractText } from "unpdf";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { name, email, cvText } = body;
+    let name: string | undefined;
+    let email: string | undefined;
+    let cvText: string | undefined;
+    let cvFileName: string | undefined;
 
-    if (!cvText) {
-      return NextResponse.json({ error: "cvText is required" }, { status: 400 });
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      name = formData.get("name") as string | undefined;
+      email = formData.get("email") as string | undefined;
+      const pdfFile = formData.get("pdf") as File | null;
+
+      if (!pdfFile) {
+        return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
+      }
+
+      cvFileName = pdfFile.name;
+      const buffer = await pdfFile.arrayBuffer();
+      const result = await extractText(buffer);
+      cvText = String(result.text);
+    } else {
+      const body = await req.json();
+      name = body.name;
+      email = body.email;
+      cvText = body.cvText;
+    }
+
+    if (!cvText || !String(cvText).trim()) {
+      return NextResponse.json({ error: "CV text is required" }, { status: 400 });
     }
 
     // 1. Parse CV with Claude
@@ -32,13 +58,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Also map job titles to occupations and expand their skills
+    // Also map job titles to occupations and expand their essential skills only
     for (const jobTitle of parsed.jobTitles) {
       try {
         const occupations = await searchOccupations(jobTitle);
         if (occupations.length > 0) {
           const occupation = await getOccupationDetails(occupations[0].uri);
-          for (const s of [...occupation.essentialSkills, ...occupation.optionalSkills]) {
+          for (const s of occupation.essentialSkills) {
             escoSkills.push({
               uri: s.uri,
               title: s.title,
@@ -65,6 +91,7 @@ export async function POST(req: NextRequest) {
         seeker: {
           create: {
             cvText,
+            cvFileName: cvFileName || null,
             jobTitles: parsed.jobTitles,
             education: parsed.education,
             skills: {
