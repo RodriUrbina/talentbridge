@@ -8,7 +8,6 @@ export function CvUpload() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [cvText, setCvText] = useState("");
   const [fileName, setFileName] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,7 +24,6 @@ export function CvUpload() {
 
     setPdfFile(file);
     setFileName(file.name);
-    setCvText("");
     setError("");
   }
 
@@ -37,30 +35,20 @@ export function CvUpload() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!cvText.trim() && !pdfFile) return;
+    if (!pdfFile) return;
     setLoading(true);
     setError("");
 
     try {
-      let res: Response;
+      const formData = new FormData();
+      formData.append("pdf", pdfFile);
+      if (name) formData.append("name", name);
+      if (email) formData.append("email", email);
 
-      if (pdfFile) {
-        const formData = new FormData();
-        formData.append("pdf", pdfFile);
-        if (name) formData.append("name", name);
-        if (email) formData.append("email", email);
-
-        res = await fetch("/api/seeker", {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        res = await fetch("/api/seeker", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, cvText }),
-        });
-      }
+      const res = await fetch("/api/seeker", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!res.ok) {
         const data = await res.json();
@@ -76,7 +64,7 @@ export function CvUpload() {
     }
   }
 
-  const hasInput = cvText.trim() || pdfFile;
+  const hasInput = !!pdfFile;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
@@ -154,32 +142,6 @@ export function CvUpload() {
           )}
         </div>
       </div>
-
-      {/* Divider */}
-      {!pdfFile && (
-        <>
-          <div className="flex items-center gap-4">
-            <div className="flex-1 border-t border-gray-200" />
-            <span className="text-sm text-gray-400">or paste text</span>
-            <div className="flex-1 border-t border-gray-200" />
-          </div>
-
-          {/* Text input */}
-          <div>
-            <label htmlFor="cvText" className="block text-sm font-medium mb-1">
-              Paste your CV / Resume
-            </label>
-            <textarea
-              id="cvText"
-              value={cvText}
-              onChange={(e) => setCvText(e.target.value)}
-              rows={12}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-              placeholder="Paste your CV text here..."
-            />
-          </div>
-        </>
-      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">

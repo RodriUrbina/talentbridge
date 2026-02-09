@@ -13,26 +13,23 @@ export async function POST(req: NextRequest) {
 
     const contentType = req.headers.get("content-type") || "";
 
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
-      name = formData.get("name") as string | undefined;
-      email = formData.get("email") as string | undefined;
-      const pdfFile = formData.get("pdf") as File | null;
-
-      if (!pdfFile) {
-        return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
-      }
-
-      cvFileName = pdfFile.name;
-      const buffer = await pdfFile.arrayBuffer();
-      const result = await extractText(buffer);
-      cvText = String(result.text);
-    } else {
-      const body = await req.json();
-      name = body.name;
-      email = body.email;
-      cvText = body.cvText;
+    if (!contentType.includes("multipart/form-data")) {
+      return NextResponse.json({ error: "PDF upload required (multipart/form-data)" }, { status: 400 });
     }
+
+    const formData = await req.formData();
+    name = formData.get("name") as string | undefined;
+    email = formData.get("email") as string | undefined;
+    const pdfFile = formData.get("pdf") as File | null;
+
+    if (!pdfFile) {
+      return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
+    }
+
+    cvFileName = pdfFile.name;
+    const buffer = await pdfFile.arrayBuffer();
+    const result = await extractText(buffer);
+    cvText = String(result.text);
 
     if (!cvText || !String(cvText).trim()) {
       return NextResponse.json({ error: "CV text is required" }, { status: 400 });

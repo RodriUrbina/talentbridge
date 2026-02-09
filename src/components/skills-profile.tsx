@@ -1,20 +1,10 @@
-import { SkillBadge } from "./skill-badge";
-
-interface Skill {
-  id: string;
-  escoUri: string;
-  title: string;
-  skillType?: string | null;
-}
-
 interface SkillsProfileProps {
   name: string;
   jobTitles: string[];
   education: string[];
-  skills: Skill[];
 }
 
-export function SkillsProfile({ name, jobTitles, education, skills }: SkillsProfileProps) {
+export function SkillsProfile({ name, jobTitles, education }: SkillsProfileProps) {
   return (
     <div className="space-y-8">
       <div>
@@ -42,17 +32,6 @@ export function SkillsProfile({ name, jobTitles, education, skills }: SkillsProf
           </ul>
         </div>
       )}
-
-      <div>
-        <h3 className="text-lg font-semibold mb-3">
-          ESCO Skills ({skills.length})
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {skills.map((skill) => (
-            <SkillBadge key={skill.id} title={skill.title} type="neutral" />
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

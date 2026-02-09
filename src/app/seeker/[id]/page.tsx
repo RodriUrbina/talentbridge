@@ -93,7 +93,6 @@ export default async function SeekerProfilePage({
           name={seeker.user.name || "Anonymous Seeker"}
           jobTitles={seeker.jobTitles}
           education={seeker.education}
-          skills={seeker.skills}
         />
       </div>
 

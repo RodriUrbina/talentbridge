@@ -1,7 +1,5 @@
 "use client";
 
-import { SkillBadge } from "./skill-badge";
-
 interface FuzzyTitle {
   seekerTitle: string;
   jobTitle: string;
@@ -146,67 +144,6 @@ export function MatchResults({
                 <span className="w-3 h-3 rounded-full bg-purple-400 inline-block" /> Proficiency bonus (+{Math.round(scoreBreakdown.proficiencyBonus * 100)}%)
               </span>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Exact Matched Essential Skills */}
-      {matchedTitles.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            {viewMode === "seeker" ? "Skills You Have" : "Matching Skills"} ({matchedTitles.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {matchedTitles.map((title, i) => (
-              <SkillBadge key={i} title={title} type="matched" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Near-Matches (Fuzzy) */}
-      {fuzzyTitles && fuzzyTitles.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            Near-Matches ({fuzzyTitles.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {fuzzyTitles.map((f, i) => (
-              <SkillBadge
-                key={i}
-                title={`${f.seekerTitle} → ${f.jobTitle}`}
-                type="fuzzy"
-                subtitle={`~${Math.round(f.similarity * 100)}%`}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Missing Essential Skills */}
-      {missingTitles.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            {viewMode === "seeker" ? "Skills to Develop" : "Missing Skills"} ({missingTitles.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {missingTitles.map((title, i) => (
-              <SkillBadge key={i} title={title} type="missing" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Optional Skills Matched */}
-      {optionalMatchedTitles && optionalMatchedTitles.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            Optional Skills Matched ({optionalMatchedTitles.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {optionalMatchedTitles.map((title, i) => (
-              <SkillBadge key={i} title={title} type="optional-matched" />
-            ))}
           </div>
         </div>
       )}
