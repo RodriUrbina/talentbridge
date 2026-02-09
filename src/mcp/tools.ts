@@ -45,7 +45,7 @@ export function registerTools(server: McpServer) {
         const occupations = await searchOccupations(jobTitle);
         if (occupations.length > 0) {
           const occupation = await getOccupationDetails(occupations[0].uri);
-          for (const s of [...occupation.essentialSkills, ...occupation.optionalSkills]) {
+          for (const s of occupation.essentialSkills) {
             escoSkills.push({ uri: s.uri, title: s.title, skillType: s.skillType });
           }
         }
