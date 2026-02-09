@@ -62,6 +62,36 @@ Return ONLY the JSON object, no other text.`,
   };
 }
 
+export async function generateJobDescription(
+  jobTitle: string,
+  essentialSkills: string[],
+  optionalSkills: string[]
+): Promise<string> {
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: `Write a professional job description for the role of "${jobTitle}".
+
+Essential skills: ${essentialSkills.join(", ")}
+Nice-to-have skills: ${optionalSkills.join(", ")}
+
+Structure the description with these sections:
+1. **Role Overview** — A brief paragraph about the role
+2. **Key Responsibilities** — 4-6 bullet points
+3. **Required Skills** — Incorporate the essential skills naturally
+4. **Nice-to-Have** — Incorporate the optional skills naturally
+
+Keep it concise and professional. Use markdown formatting.`,
+      },
+    ],
+  });
+
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
 export interface EnhancedGapContext {
   fuzzyMatches?: { seekerTitle: string; jobTitle: string; similarity: number }[];
   optionalMatchedTitles?: string[];

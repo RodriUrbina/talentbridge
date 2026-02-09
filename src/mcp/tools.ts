@@ -4,7 +4,7 @@ import { PrismaClient } from "../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { searchOccupations, getOccupationDetails, searchSkills, batchCoOccurrence } from "../lib/esco";
-import { parseCv, explainGaps, summarizeCandidate, EnhancedGapContext } from "../lib/claude";
+import { parseCv, explainGaps, summarizeCandidate, generateJobDescription, EnhancedGapContext } from "../lib/claude";
 import { matchSkillsEnhanced, SeekerSkillInput, JobSkillInput } from "../lib/matching";
 
 function createPrisma() {
@@ -193,9 +193,23 @@ export function registerTools(server: McpServer) {
         include: { skills: true },
       });
 
+      // Generate AI job description
+      const essentialTitles = occupation.essentialSkills.map((s) => s.title);
+      const optionalTitles = occupation.optionalSkills.map((s) => s.title);
+      const description = await generateJobDescription(
+        occupation.title,
+        essentialTitles,
+        optionalTitles
+      );
+      await prisma.jobPosting.update({
+        where: { id: jobPosting.id },
+        data: { description },
+      });
+
       return text(JSON.stringify({
         jobPostingId: jobPosting.id,
         title: jobPosting.title,
+        description,
         essentialSkills: occupation.essentialSkills.length,
         optionalSkills: occupation.optionalSkills.length,
         totalSkills: jobPosting.skills.length,

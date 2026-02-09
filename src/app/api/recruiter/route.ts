@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOccupationDetails } from "@/lib/esco";
+import { generateJobDescription } from "@/lib/claude";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,6 +67,19 @@ export async function POST(req: NextRequest) {
         },
       },
       include: { skills: true },
+    });
+
+    // Generate AI job description
+    const essentialTitles = occupation.essentialSkills.map((s) => s.title);
+    const optionalTitles = occupation.optionalSkills.map((s) => s.title);
+    const description = await generateJobDescription(
+      occupation.title,
+      essentialTitles,
+      optionalTitles
+    );
+    await prisma.jobPosting.update({
+      where: { id: jobPosting.id },
+      data: { description },
     });
 
     const result = await prisma.user.findUnique({

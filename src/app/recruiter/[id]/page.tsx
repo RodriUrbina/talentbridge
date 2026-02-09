@@ -1,20 +1,12 @@
-import { SkillBadge } from "@/components/skill-badge";
 import { RecruiterMatchPanel } from "@/components/recruiter-match-panel";
 import Link from "next/link";
-
-interface JobSkill {
-  id: string;
-  escoUri: string;
-  title: string;
-  skillType: string | null;
-  isEssential: boolean;
-}
 
 interface PostingData {
   id: string;
   title: string;
+  description: string | null;
   escoOccupationUri: string | null;
-  skills: JobSkill[];
+  skills: { id: string }[];
   recruiterProfile: {
     company: string | null;
     user: { name: string | null };
@@ -67,9 +59,6 @@ export default async function JobPostingPage({
     );
   }
 
-  const essential = posting.skills.filter((s) => s.isEssential);
-  const optional = posting.skills.filter((s) => !s.isEssential);
-
   const seekerOptions = seekers.map((s) => ({
     id: s.id,
     name: s.user.name || "Anonymous Seeker",
@@ -92,31 +81,17 @@ export default async function JobPostingPage({
         </p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-8 mb-8">
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            Essential Skills ({essential.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {essential.map((skill) => (
-              <SkillBadge key={skill.id} title={skill.title} type="neutral" />
-            ))}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm mb-8">
+        <h3 className="text-lg font-semibold mb-3">Job Description</h3>
+        {posting.description ? (
+          <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+            {posting.description}
           </div>
-        </div>
-
-        <div>
-          <h3 className="text-lg font-semibold mb-3">
-            Optional Skills ({optional.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {optional.map((skill) => (
-              <SkillBadge key={skill.id} title={skill.title} type="neutral" />
-            ))}
-          </div>
-        </div>
-
-        <div className="text-sm text-gray-400">
-          Total: {posting.skills.length} skills from ESCO taxonomy
+        ) : (
+          <p className="text-gray-400 italic">No description generated yet.</p>
+        )}
+        <div className="text-sm text-gray-400 mt-4">
+          Based on {posting.skills.length} skills from ESCO taxonomy
         </div>
       </div>
 

@@ -179,7 +179,7 @@ export function JobForm() {
 
           {creating && (
             <p className="text-sm text-gray-500 text-center">
-              Fetching skills for the selected occupation...
+              Fetching skills and generating job description... This may take a moment.
             </p>
           )}
         </div>
