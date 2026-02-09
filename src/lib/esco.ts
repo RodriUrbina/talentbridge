@@ -1,5 +1,18 @@
 const ESCO_API = process.env.ESCO_API_URL || "https://ec.europa.eu/esco/api";
 
+async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(url);
+    if (res.ok) return res;
+    if (res.status >= 500 && i < retries - 1) {
+      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      continue;
+    }
+    throw new Error(`ESCO API error: ${res.status} ${res.statusText}`);
+  }
+  throw new Error("ESCO API: max retries reached");
+}
+
 export interface EscoSkill {
   uri: string;
   title: string;
@@ -20,8 +33,7 @@ export interface EscoOccupation {
 
 export async function searchOccupations(query: string): Promise<{ uri: string; title: string }[]> {
   const url = `${ESCO_API}/search?text=${encodeURIComponent(query)}&language=en&type=occupation&limit=10`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`ESCO search failed: ${res.statusText}`);
+  const res = await fetchWithRetry(url);
   const data = await res.json();
 
   const results = data._embedded?.results ?? [];
@@ -33,8 +45,7 @@ export async function searchOccupations(query: string): Promise<{ uri: string; t
 
 export async function getOccupationDetails(occupationUri: string): Promise<EscoOccupation> {
   const url = `${ESCO_API}/resource/occupation?uri=${encodeURIComponent(occupationUri)}&language=en`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`ESCO occupation fetch failed: ${res.statusText}`);
+  const res = await fetchWithRetry(url);
   const data = await res.json();
 
   const essentialSkills: EscoSkill[] = (data._links?.hasEssentialSkill ?? []).map(
@@ -67,8 +78,7 @@ export async function getOccupationDetails(occupationUri: string): Promise<EscoO
 
 export async function searchSkills(query: string): Promise<{ uri: string; title: string }[]> {
   const url = `${ESCO_API}/search?text=${encodeURIComponent(query)}&language=en&type=skill&limit=10`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`ESCO skill search failed: ${res.statusText}`);
+  const res = await fetchWithRetry(url);
   const data = await res.json();
 
   const results = data._embedded?.results ?? [];

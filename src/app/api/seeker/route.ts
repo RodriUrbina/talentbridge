@@ -19,27 +19,35 @@ export async function POST(req: NextRequest) {
     const escoSkills: { uri: string; title: string; skillType?: string }[] = [];
 
     for (const rawSkill of parsed.rawSkills) {
-      const results = await searchSkills(rawSkill);
-      if (results.length > 0) {
-        escoSkills.push({
-          uri: results[0].uri,
-          title: results[0].title,
-        });
+      try {
+        const results = await searchSkills(rawSkill);
+        if (results.length > 0) {
+          escoSkills.push({
+            uri: results[0].uri,
+            title: results[0].title,
+          });
+        }
+      } catch {
+        console.warn(`Skipping skill "${rawSkill}" — ESCO API error`);
       }
     }
 
     // Also map job titles to occupations and expand their skills
     for (const jobTitle of parsed.jobTitles) {
-      const occupations = await searchOccupations(jobTitle);
-      if (occupations.length > 0) {
-        const occupation = await getOccupationDetails(occupations[0].uri);
-        for (const s of [...occupation.essentialSkills, ...occupation.optionalSkills]) {
-          escoSkills.push({
-            uri: s.uri,
-            title: s.title,
-            skillType: s.skillType,
-          });
+      try {
+        const occupations = await searchOccupations(jobTitle);
+        if (occupations.length > 0) {
+          const occupation = await getOccupationDetails(occupations[0].uri);
+          for (const s of [...occupation.essentialSkills, ...occupation.optionalSkills]) {
+            escoSkills.push({
+              uri: s.uri,
+              title: s.title,
+              skillType: s.skillType,
+            });
+          }
         }
+      } catch {
+        console.warn(`Skipping occupation "${jobTitle}" — ESCO API error`);
       }
     }
 
