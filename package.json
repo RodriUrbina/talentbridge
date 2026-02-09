@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "mcp": "npx tsx --env-file=.env.local src/mcp/server.ts",
+    "mcp:stdio": "npx tsx --env-file=.env.local src/mcp/stdio.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
