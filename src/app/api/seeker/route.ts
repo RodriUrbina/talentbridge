@@ -45,46 +45,44 @@ export async function POST(req: NextRequest) {
       proficiencyMap.set(sp.name.toLowerCase(), prof);
     }
 
-    // 2. Map raw skills to ESCO skills (source: "explicit")
-    const escoSkills: { uri: string; title: string; skillType?: string; proficiency: number; source: string }[] = [];
-
-    for (const rawSkill of parsed.rawSkills) {
-      try {
-        const results = await searchSkills(rawSkill);
-        if (results.length > 0) {
-          const prof = proficiencyMap.get(rawSkill.toLowerCase()) ?? 3;
-          escoSkills.push({
-            uri: results[0].uri,
-            title: results[0].title,
-            proficiency: prof,
-            source: "explicit",
-          });
-        }
-      } catch {
-        console.warn(`Skipping skill "${rawSkill}" — ESCO API error`);
-      }
-    }
-
-    // 3. Also map job titles to occupations and expand their essential skills (source: "inferred")
-    for (const jobTitle of parsed.jobTitles) {
-      try {
-        const occupations = await searchOccupations(jobTitle);
-        if (occupations.length > 0) {
-          const occupation = await getOccupationDetails(occupations[0].uri);
-          for (const s of occupation.essentialSkills) {
-            escoSkills.push({
-              uri: s.uri,
-              title: s.title,
-              skillType: s.skillType,
-              proficiency: 3,
-              source: "inferred",
-            });
+    // 2. Map raw skills to ESCO skills (source: "explicit") — parallel
+    const explicitSkillResults = await Promise.all(
+      parsed.rawSkills.map(async (rawSkill) => {
+        try {
+          const results = await searchSkills(rawSkill);
+          if (results.length > 0) {
+            const prof = proficiencyMap.get(rawSkill.toLowerCase()) ?? 3;
+            return { uri: results[0].uri, title: results[0].title, proficiency: prof, source: "explicit" as const };
           }
+        } catch {
+          console.warn(`Skipping skill "${rawSkill}" — ESCO API error`);
         }
-      } catch {
-        console.warn(`Skipping occupation "${jobTitle}" — ESCO API error`);
-      }
-    }
+        return null;
+      })
+    );
+
+    // 3. Also map job titles to occupations and expand their essential skills (source: "inferred") — parallel
+    const inferredSkillResults = await Promise.all(
+      parsed.jobTitles.map(async (jobTitle) => {
+        try {
+          const occupations = await searchOccupations(jobTitle);
+          if (occupations.length > 0) {
+            const occupation = await getOccupationDetails(occupations[0].uri);
+            return occupation.essentialSkills.map((s) => ({
+              uri: s.uri, title: s.title, skillType: s.skillType, proficiency: 3, source: "inferred" as const,
+            }));
+          }
+        } catch {
+          console.warn(`Skipping occupation "${jobTitle}" — ESCO API error`);
+        }
+        return [];
+      })
+    );
+
+    const escoSkills: { uri: string; title: string; skillType?: string; proficiency: number; source: string }[] = [
+      ...explicitSkillResults.filter((s) => s !== null),
+      ...inferredSkillResults.flat(),
+    ];
 
     // 3b. Validate inferred skills against CV evidence
     const inferredSkills = escoSkills.filter((s) => s.source === "inferred");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { TransitionResults } from "./transition-results";
+import { TransitionResults, TrainingProgram } from "./transition-results";
 
 interface OccupationOption {
   uri: string;
@@ -37,6 +37,8 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<TransitionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgram[]>([]);
+  const [trainingLoading, setTrainingLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -87,6 +89,7 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
     setQuery(occ.title);
     setShowDropdown(false);
     setResult(null);
+    setTrainingPrograms([]);
   }
 
   async function handleAnalyze() {
@@ -94,6 +97,8 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
     setLoading(true);
     setError(null);
     setResult(null);
+    setTrainingPrograms([]);
+    setTrainingLoading(false);
 
     try {
       const res = await fetch("/api/transition", {
@@ -112,6 +117,23 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
 
       const data = await res.json();
       setResult(data);
+
+      // Fire non-blocking training program search
+      if (data.missingTitles?.length > 0) {
+        setTrainingLoading(true);
+        fetch("/api/training-programs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            missingSkills: data.missingTitles,
+            targetOccupation: data.occupationTitle,
+          }),
+        })
+          .then((r) => (r.ok ? r.json() : { programs: [] }))
+          .then((d) => setTrainingPrograms(d.programs ?? []))
+          .catch(() => setTrainingPrograms([]))
+          .finally(() => setTrainingLoading(false));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -133,6 +155,7 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
             setQuery(e.target.value);
             setSelected(null);
             setResult(null);
+            setTrainingPrograms([]);
           }}
           placeholder="Search for an occupation (e.g., electrician, software developer)"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -188,7 +211,11 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
 
       {/* Results */}
       {result && (
-        <TransitionResults coaching={result.coaching} />
+        <TransitionResults
+          coaching={result.coaching}
+          trainingPrograms={trainingPrograms}
+          trainingLoading={trainingLoading}
+        />
       )}
     </div>
   );
