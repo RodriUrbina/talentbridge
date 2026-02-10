@@ -220,7 +220,7 @@ export async function explainTransitionGaps(
 
   const message = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
-    max_tokens: 2048,
+    max_tokens: 3000,
     messages: [
       {
         role: "user",
@@ -230,11 +230,25 @@ They match ${matchedSkills.length} out of ${matchedSkills.length + missingSkills
 ${matchedSkills.length > 0 ? `Transferable skills they already have: ${matchedSkills.join(", ")}` : "They have none of the essential skills yet."}
 ${missingSkills.length > 0 ? `Skills they need to acquire: ${missingSkills.join(", ")}` : ""}${extraContext}
 
-Provide a personalized career transition plan covering:
-1. **Transferable Strengths** — Which of their existing skills carry over and why they're valuable in the new role
-2. **Skills Gap Analysis** — What's missing and how critical each gap is
-3. **Recommended Transition Path** — Concrete steps: courses, certifications, entry-level positions, or apprenticeships
-4. **Timeline Estimate** — Realistic timeframe for making the transition
+Provide a personalized career transition plan with EXACTLY these 6 section headings (use ## markdown headings):
+
+## Executive Summary
+High-level overview of the transition viability — is this realistic, what's the overall picture.
+
+## Transferable Strengths
+Which existing skills carry over strongly, what advantages they provide, and an honest reality check.
+
+## Skills Gap Analysis
+What's missing and how critical each gap is. Rank gaps by importance.
+
+## Recommended Transition Path
+Concrete steps: courses, certifications, entry-level positions, apprenticeships, or projects to build.
+
+## Timeline Estimate
+Realistic timeframe for making the transition, broken into phases if helpful.
+
+## Financial Considerations
+Costs of training/certifications, salary expectations during transition, and potential ROI.
 
 Be realistic about the effort required. If the gap is large, acknowledge it while staying constructive. Keep the advice specific and actionable.`,
       },

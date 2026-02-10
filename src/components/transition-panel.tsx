@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { MatchResults } from "./match-results";
+import { TransitionResults } from "./transition-results";
 
 interface OccupationOption {
   uri: string;
@@ -188,19 +188,7 @@ export function TransitionPanel({ seekerProfileId }: { seekerProfileId: string }
 
       {/* Results */}
       {result && (
-        <MatchResults
-          matchScore={result.matchScore}
-          seekerRelevance={result.seekerRelevance}
-          matchedTitles={result.matchedTitles}
-          missingTitles={result.missingTitles}
-          fuzzyTitles={result.fuzzyTitles}
-          optionalMatchedTitles={result.optionalMatchedTitles}
-          optionalMissingTitles={result.optionalMissingTitles}
-          scoreBreakdown={result.scoreBreakdown}
-          coaching={result.coaching}
-          jobTitle={result.occupationTitle}
-          viewMode="transition"
-        />
+        <TransitionResults coaching={result.coaching} />
       )}
     </div>
   );
