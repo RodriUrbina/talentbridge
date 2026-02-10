@@ -23,7 +23,7 @@ export async function parseCv(cvText: string): Promise<ParsedCv> {
         role: "user",
         content: `Analyze the following CV/resume text and extract structured information. Return a JSON object with exactly these fields:
 
-- "jobTitles": an array of job titles the person has held or is qualified for
+- "jobTitles": an array of job titles the person has actually held in professional work experience (do NOT include titles inferred from education, degrees, or coursework — only actual positions held)
 - "education": an array of educational qualifications (degrees, certifications, courses)
 - "rawSkills": an array of skill name strings mentioned or implied (technical skills, soft skills, tools, languages, etc.)
 - "skillsWithProficiency": an array of objects { "name": string, "proficiency": number } where proficiency is 1-5:
@@ -60,6 +60,56 @@ Return ONLY the JSON object, no other text.`,
     rawSkills,
     skillsWithProficiency,
   };
+}
+
+export async function validateInferredSkills(
+  candidateSkills: { uri: string; title: string }[],
+  cvText: string
+): Promise<Set<string>> {
+  if (candidateSkills.length === 0) return new Set();
+
+  const skillList = candidateSkills
+    .map((s, i) => `${i + 1}. ${s.title}`)
+    .join("\n");
+
+  const message = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 2048,
+    messages: [
+      {
+        role: "user",
+        content: `You are evaluating whether skills are supported by evidence in a CV.
+
+Here is a list of candidate skills:
+${skillList}
+
+Here is the CV text:
+${cvText}
+
+For each skill, determine if the CV provides evidence that the person has this skill. A skill is supported if:
+- The CV mentions it directly
+- The CV describes work that clearly requires this skill
+- The CV lists a closely related technology or practice
+
+Do NOT include skills just because they are common in the person's occupation. Only include skills with real evidence in the CV.
+
+Return a JSON array of the NUMBERS (1-based indices) of the supported skills. Example: [1, 3, 5]
+Return ONLY the JSON array, no other text.`,
+      },
+    ],
+  });
+
+  const raw = message.content[0].type === "text" ? message.content[0].text : "[]";
+  const text = raw.replace(/^```(?:json)?\s*\n?/m, "").replace(/\n?```\s*$/m, "");
+  const indices: number[] = JSON.parse(text);
+
+  const validatedUris = new Set<string>();
+  for (const idx of indices) {
+    if (idx >= 1 && idx <= candidateSkills.length) {
+      validatedUris.add(candidateSkills[idx - 1].uri);
+    }
+  }
+  return validatedUris;
 }
 
 export async function generateJobDescription(
@@ -114,10 +164,11 @@ export async function explainGaps(
     if (enhanced.optionalMatchedTitles && enhanced.optionalMatchedTitles.length > 0) {
       extraContext += `\n\nThey also match these optional/nice-to-have skills: ${enhanced.optionalMatchedTitles.join(", ")}`;
     }
-    if (enhanced.seekerRelevance !== undefined) {
-      extraContext += `\n\n${Math.round(enhanced.seekerRelevance)}% of their total skill set is relevant to this job.`;
-    }
   }
+
+  const matchRatio = matchedSkills.length + missingSkills.length > 0
+    ? Math.round((matchedSkills.length / (matchedSkills.length + missingSkills.length)) * 100)
+    : 0;
 
   const message = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
@@ -127,15 +178,65 @@ export async function explainGaps(
         role: "user",
         content: `You are a career coach helping a recent graduate. They want to get a job as "${jobTitle}".
 
-They already have these skills: ${matchedSkills.join(", ")}
-They are missing these skills: ${missingSkills.join(", ")}${extraContext}
+They match ${matchedSkills.length} out of ${matchedSkills.length + missingSkills.length} essential skills for this role (${matchRatio}%).
+${matchedSkills.length > 0 ? `Skills they have: ${matchedSkills.join(", ")}` : "They have none of the essential skills yet."}
+${missingSkills.length > 0 ? `Skills they are missing: ${missingSkills.join(", ")}` : ""}${extraContext}
 
 Provide a brief, encouraging explanation of:
-1. What they're strong in
+1. What they're strong in (based ONLY on their matched skills above — do not overstate their readiness)
 2. What skills they need to develop
 3. Practical suggestions for how to acquire the missing skills (courses, projects, certifications)
 
-Keep it concise and actionable.`,
+Be realistic about their current level. If they match few or no essential skills, acknowledge the gap honestly while staying encouraging. Keep it concise and actionable.`,
+      },
+    ],
+  });
+
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
+export async function explainTransitionGaps(
+  currentTitles: string[],
+  targetOccupation: string,
+  matchedSkills: string[],
+  missingSkills: string[],
+  enhanced?: EnhancedGapContext
+): Promise<string> {
+  let extraContext = "";
+  if (enhanced) {
+    if (enhanced.fuzzyMatches && enhanced.fuzzyMatches.length > 0) {
+      extraContext += `\n\nThey also have near-matches (related but not exact skills):\n${enhanced.fuzzyMatches
+        .map((f) => `- "${f.seekerTitle}" is ~${Math.round(f.similarity * 100)}% related to required "${f.jobTitle}"`)
+        .join("\n")}`;
+    }
+    if (enhanced.optionalMatchedTitles && enhanced.optionalMatchedTitles.length > 0) {
+      extraContext += `\n\nThey also match these optional/nice-to-have skills: ${enhanced.optionalMatchedTitles.join(", ")}`;
+    }
+  }
+
+  const matchRatio = matchedSkills.length + missingSkills.length > 0
+    ? Math.round((matchedSkills.length / (matchedSkills.length + missingSkills.length)) * 100)
+    : 0;
+
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 2048,
+    messages: [
+      {
+        role: "user",
+        content: `You are a career transition advisor. This person currently works as ${currentTitles.length > 0 ? currentTitles.join(", ") : "an unspecified role"} and wants to transition to "${targetOccupation}".
+
+They match ${matchedSkills.length} out of ${matchedSkills.length + missingSkills.length} essential skills for this occupation (${matchRatio}%).
+${matchedSkills.length > 0 ? `Transferable skills they already have: ${matchedSkills.join(", ")}` : "They have none of the essential skills yet."}
+${missingSkills.length > 0 ? `Skills they need to acquire: ${missingSkills.join(", ")}` : ""}${extraContext}
+
+Provide a personalized career transition plan covering:
+1. **Transferable Strengths** — Which of their existing skills carry over and why they're valuable in the new role
+2. **Skills Gap Analysis** — What's missing and how critical each gap is
+3. **Recommended Transition Path** — Concrete steps: courses, certifications, entry-level positions, or apprenticeships
+4. **Timeline Estimate** — Realistic timeframe for making the transition
+
+Be realistic about the effort required. If the gap is large, acknowledge it while staying constructive. Keep the advice specific and actionable.`,
       },
     ],
   });

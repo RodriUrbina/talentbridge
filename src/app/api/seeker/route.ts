@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseCv } from "@/lib/claude";
+import { parseCv, validateInferredSkills } from "@/lib/claude";
 import { searchSkills, searchOccupations, getOccupationDetails } from "@/lib/esco";
 import { extractText } from "unpdf";
 
@@ -83,6 +83,21 @@ export async function POST(req: NextRequest) {
         }
       } catch {
         console.warn(`Skipping occupation "${jobTitle}" — ESCO API error`);
+      }
+    }
+
+    // 3b. Validate inferred skills against CV evidence
+    const inferredSkills = escoSkills.filter((s) => s.source === "inferred");
+    if (inferredSkills.length > 0) {
+      const validatedUris = await validateInferredSkills(
+        inferredSkills.map((s) => ({ uri: s.uri, title: s.title })),
+        cvText
+      );
+      // Remove inferred skills that weren't validated
+      for (let i = escoSkills.length - 1; i >= 0; i--) {
+        if (escoSkills[i].source === "inferred" && !validatedUris.has(escoSkills[i].uri)) {
+          escoSkills.splice(i, 1);
+        }
       }
     }
 

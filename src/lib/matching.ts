@@ -192,19 +192,21 @@ export function matchSkillsEnhanced(
       relevantSeekerCount++;
       continue;
     }
-    // Check fuzzy relevance
+    // Check fuzzy relevance via co-occurrence
+    let found = false;
     const coOcc = coOccurrenceMap.get(seeker.uri);
     if (coOcc) {
       for (const [jobUri, jaccard] of coOcc) {
         if (allJobUris.has(jobUri) && jaccard >= CO_OCCURRENCE_THRESHOLD) {
           relevantSeekerCount++;
+          found = true;
           break;
         }
       }
-      if (relevantSeekerCount > seekerSkills.indexOf(seeker) + 1) continue;
     }
+    if (found) continue;
     // Title similarity
-    for (const [jobUri, jobTitle] of allJobTitles) {
+    for (const [, jobTitle] of allJobTitles) {
       const sim = computeTitleSimilarity(seeker.title, jobTitle);
       if (sim >= TITLE_SIMILARITY_THRESHOLD) {
         relevantSeekerCount++;
@@ -214,7 +216,7 @@ export function matchSkillsEnhanced(
   }
   const seekerRelevance =
     seekerSkills.length > 0
-      ? Math.round((relevantSeekerCount / seekerSkills.length) * 100)
+      ? Math.min(100, Math.round((relevantSeekerCount / seekerSkills.length) * 100))
       : 0;
 
   // Build score breakdown

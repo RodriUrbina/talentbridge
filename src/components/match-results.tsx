@@ -28,7 +28,7 @@ interface MatchResultsProps {
   summary?: string;
   seekerName?: string;
   jobTitle?: string;
-  viewMode: "seeker" | "recruiter";
+  viewMode: "seeker" | "recruiter" | "transition";
 }
 
 export function MatchResults({
@@ -67,19 +67,22 @@ export function MatchResults({
         <div className="flex items-center justify-center gap-8">
           <div className="text-center">
             <p className="text-sm text-gray-500 mb-1">
-              {viewMode === "seeker" ? "Job Fit" : `${seekerName}'s Job Fit`}
+              {viewMode === "transition" ? "Skills You Already Have" : viewMode === "seeker" ? "Job Requirements Met" : `${seekerName}'s Requirements Met`}
             </p>
             <p className={`text-5xl font-bold ${scoreColor}`}>{matchScore}%</p>
             <p className="text-sm text-gray-500 mt-1">
-              {matchedTitles.length} of {matchedTitles.length + missingTitles.length} essential skills
+              {matchedTitles.length} of {matchedTitles.length + missingTitles.length + (scoreBreakdown?.essentialFuzzy || 0)} essential {viewMode === "transition" ? "occupation " : ""}skills
+              {scoreBreakdown && scoreBreakdown.essentialFuzzy > 0 && ` (+ ${scoreBreakdown.essentialFuzzy} near-match${scoreBreakdown.essentialFuzzy > 1 ? "es" : ""})`}
             </p>
           </div>
           {seekerRelevance !== undefined && (
             <div className="text-center border-l border-gray-200 pl-8">
-              <p className="text-sm text-gray-500 mb-1">Skill Relevance</p>
+              <p className="text-sm text-gray-500 mb-1">
+                {viewMode === "transition" ? "Your Transferable Skills" : viewMode === "seeker" ? "Your Skills Used" : `${seekerName}'s Skills Used`}
+              </p>
               <p className="text-4xl font-bold text-blue-600">{seekerRelevance}%</p>
               <p className="text-sm text-gray-500 mt-1">
-                {viewMode === "seeker" ? "of your skills apply" : "of their skills apply"}
+                {viewMode === "seeker" ? "of your skills match this role" : "of their skills match this role"}
               </p>
             </div>
           )}
@@ -149,9 +152,11 @@ export function MatchResults({
       )}
 
       {/* AI Insight */}
-      {viewMode === "seeker" && coaching && (
+      {(viewMode === "seeker" || viewMode === "transition") && coaching && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-          <h3 className="text-lg font-semibold mb-2">Career Coaching</h3>
+          <h3 className="text-lg font-semibold mb-2">
+            {viewMode === "transition" ? "Transition Plan" : "Career Coaching"}
+          </h3>
           <div className="text-sm text-gray-700 whitespace-pre-wrap">{coaching}</div>
         </div>
       )}

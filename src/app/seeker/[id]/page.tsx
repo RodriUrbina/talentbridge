@@ -1,5 +1,5 @@
 import { SkillsProfile } from "@/components/skills-profile";
-import { SeekerMatchPanel } from "@/components/seeker-match-panel";
+import { TransitionPanel } from "@/components/transition-panel";
 import Link from "next/link";
 
 interface SeekerData {
@@ -15,15 +15,6 @@ interface SeekerData {
   }[];
 }
 
-interface JobPostingData {
-  id: string;
-  title: string;
-  skills: { isEssential: boolean }[];
-  recruiterProfile: {
-    company: string | null;
-  };
-}
-
 async function getSeeker(id: string): Promise<SeekerData | null> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3002";
   const res = await fetch(`${baseUrl}/api/seeker/${id}`, {
@@ -33,25 +24,13 @@ async function getSeeker(id: string): Promise<SeekerData | null> {
   return res.json();
 }
 
-async function getJobPostings(): Promise<JobPostingData[]> {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3002";
-  const res = await fetch(`${baseUrl}/api/recruiter`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return [];
-  return res.json();
-}
-
 export default async function SeekerProfilePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [seeker, jobPostings] = await Promise.all([
-    getSeeker(id),
-    getJobPostings(),
-  ]);
+  const seeker = await getSeeker(id);
 
   if (!seeker) {
     return (
@@ -63,14 +42,6 @@ export default async function SeekerProfilePage({
       </main>
     );
   }
-
-  const jobOptions = jobPostings.map((jp) => ({
-    id: jp.id,
-    title: jp.title,
-    company: jp.recruiterProfile.company,
-    essentialCount: jp.skills.filter((s) => s.isEssential).length,
-    optionalCount: jp.skills.filter((s) => !s.isEssential).length,
-  }));
 
   return (
     <main className="min-h-screen p-8 max-w-4xl mx-auto">
@@ -97,18 +68,15 @@ export default async function SeekerProfilePage({
       </div>
 
       <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">Match Against a Job</h2>
+        <h2 className="text-2xl font-bold mb-2">Explore a Career Transition</h2>
         <p className="text-gray-600">
-          Select a job posting to see how your skills compare and get
-          personalized coaching on how to close any gaps.
+          Search for a target occupation to see how your skills compare and get
+          a personalized transition plan.
         </p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-        <SeekerMatchPanel
-          seekerProfileId={seeker.id}
-          jobPostings={jobOptions}
-        />
+        <TransitionPanel seekerProfileId={seeker.id} />
       </div>
     </main>
   );
